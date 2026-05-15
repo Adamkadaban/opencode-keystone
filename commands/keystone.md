@@ -134,7 +134,12 @@ Create `AGENTS.md` at the project root. Write the rules below directly into it �
    - One PR per issue. **Squash-merge to `main`** so every commit on `main` is a complete tested unit (keeps `git bisect` reliable, makes reverts trivial, makes `git log main` read like a changelog). The squash commit body should include the PR's bullet-point summary so the linked PR is easy to find from `git log`. Detailed per-commit history is preserved on the PR itself on GitHub.
    - Delete branch after merge.
    - **Only merge code that is confirmed working.** A PR is opened only when the work is complete and the test suite passes. PRs are not checkpoints. If a PR turns out to be incomplete, close it or convert to draft — do not merge it "to be fixed later".
-6. **Pull Request Review** — After opening every PR, run the **copilot second-opinion** flow (skill: `copilot-second-opinion`, MCP: `copilot-review`). Triage every comment, push fixes, reply, resolve threads. Repeat until Copilot is silent. Don't merge until CI is green, Copilot loop done, human approval.
+6. **Pull Request Review (mandatory)** — Every PR runs the Copilot review loop. The flow:
+   - **Auto-review is enabled at the repo level**, so Copilot is added as a reviewer on every new PR automatically (configured via the `copilot-review` MCP's `enable_copilot_auto_review` tool at bootstrap; recreate the ruleset if it gets deleted).
+   - When opening a PR, load the **`copilot-second-opinion` skill** and let it drive the loop: wait for Copilot's review (`copilot-review_wait_for_copilot_review` or polling via `check_copilot_review_status`), triage every thread (agree / disagree / clarify), push fixes, reply via `reply_to_review_comment`, resolve via `resolve_review_thread`. Repeat until Copilot has nothing more to say.
+   - If auto-review isn't enabled on the repo for any reason, fall back to `copilot-review_request_copilot_review` to add Copilot as a reviewer per-PR.
+   - Don't merge until: CI is green, the Copilot loop is complete (no unresolved Copilot threads), and at least one human (or supervising agent) has approved.
+   - Note: CODEOWNERS does not work for this purpose — Copilot only submits `COMMENTED` reviews, never `APPROVED`, so it can't satisfy a required-approver rule. Use the auto-review ruleset, not CODEOWNERS.
 7. **Quality Gates and CI**
    - Project-specific exact commands for `lint`, `format`, `typecheck`, `test`, `build`. All of `lint`, `typecheck`, `test` must pass **locally** before opening a PR. Tests ship with implementation. Deterministic preferred.
    - CI uses **manual triggers only** (`workflow_dispatch`) to avoid burning Actions minutes on every push. The agent runs the full suite locally during development, then triggers CI exactly once per PR right before requesting merge: `gh workflow run test.yml --ref <branch>`.
@@ -204,8 +209,9 @@ Once approved:
    - Runs the project's `lint`, `typecheck`, and `test` commands. Fails the workflow on any non-zero exit.
    - Use the same toolchain the project uses locally (e.g. `actions/setup-node`, `actions-rust-lang/setup-rust-toolchain`, `astral-sh/setup-uv`).
 9. Create the GitHub repo via the **GitHub MCP** (private/public per Phase 0 answer). Push `main`.
-10. Configure a repo **Ruleset** on `main` that requires the `test` workflow to pass before merge. Use the GitHub MCP / API; if a Ruleset is not creatable programmatically with the user's permissions, print the exact UI steps for the user to do it once: `Settings → Rules → Rulesets → New branch ruleset → Target main → Require status checks to pass → add 'test'`.
-11. Open a GitHub issue for **every** task in Phase 1's checklist. Title = task summary. Body = the checklist item plus a link to the relevant `PLAN.md` section.
+10. **Enable automatic Copilot review on `main`** by calling the `copilot-review` MCP's `enable_copilot_auto_review` tool with the new repo. This creates a repository ruleset that auto-requests Copilot as a reviewer on every new PR — no per-PR request needed afterward. If the tool reports the ruleset wasn't created (insufficient permissions, MCP unavailable), record this in `NOTES.md` with date and consequence ("PRs need manual `request_copilot_review` until ruleset is created"). Do *not* use CODEOWNERS as a substitute — Copilot only submits `COMMENTED` reviews and won't satisfy required-approver rules.
+11. Configure a repo **Ruleset** on `main` that requires the `test` workflow to pass before merge. Use the GitHub MCP / API; if a Ruleset is not creatable programmatically with the user's permissions, print the exact UI steps for the user to do it once: `Settings → Rules → Rulesets → New branch ruleset → Target main → Require status checks to pass → add 'test'`.
+12. Open a GitHub issue for **every** task in Phase 1's checklist. Title = task summary. Body = the checklist item plus a link to the relevant `PLAN.md` section.
 
 ## Phase 7 — Parallel Execution
 
@@ -215,7 +221,7 @@ For Phase 1 (and each subsequent phase):
 2. For each parallel task: `git worktree add ../<project-slug>-wt/<task-slug> -b <type>/<task-slug>`.
 3. Spawn one sub-agent per worktree, **max 3 concurrent** (sequential waves if more).
 4. Each sub-agent: implements the task, writes tests with the code, runs the project's `lint` / `typecheck` / `test` **locally to green**, commits in conventional-commit increments, pushes. **A PR is opened only after the work is complete and tests pass locally** — PRs are not checkpoints.
-5. After the PR opens, run the **copilot second-opinion** loop (skill: `copilot-second-opinion`). Address feedback, push fixes, resolve threads, repeat until Copilot is silent.
+5. After the PR opens, **load the `copilot-second-opinion` skill** and let it drive the review loop end-to-end. The skill knows how to wait for Copilot's review on the PR's head SHA, fetch each thread, decide on a response, push fixes, reply, and resolve threads. Repeat until Copilot is silent on the current head. Do not skip this step or shortcut it — the loop is mandatory before merge.
 6. **Pre-merge CI gate**: trigger the test workflow exactly once on the PR's head — `gh workflow run test.yml --ref <branch>` — and wait for it to complete green. Do not merge if it's red. Re-trigger only after pushing a fix.
 7. Squash-merge (the squash commit body should include the PR description's bullet summary). Delete branch. `git worktree remove ../<project-slug>-wt/<task-slug>`.
 8. Tick the box in `PLAN.md`. Roll the tick into the merging PR if the same change touches code; otherwise commit it alone with `docs(plan): tick <task>`.
