@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // opencode-keystone installer
-// Installs the /keystone slash command into ~/.config/opencode/commands/
+// Installs the /keystone slash command for opencode, Claude Code, and/or Copilot CLI.
+// Codex CLI is intentionally not supported — its slash-command model doesn't map cleanly.
 
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -12,22 +13,79 @@ import {
   statSync,
   symlinkSync,
   copyFileSync,
+  readFileSync,
+  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = resolve(dirname(__filename), "..");
 const SOURCE = join(REPO_ROOT, "commands", "keystone.md");
-const TARGET_DIR = join(homedir(), ".config", "opencode", "commands");
-const TARGET = join(TARGET_DIR, "keystone.md");
 
-const args = new Set(process.argv.slice(2));
-const cmd = process.argv[2] && !process.argv[2].startsWith("--")
-  ? process.argv[2]
-  : "install";
-const force = args.has("--force");
-const copy = args.has("--copy");
-const dev = args.has("--dev");
+const HOME = homedir();
+
+// Per-target install descriptors. Each target may define a `transform`
+// function that rewrites the source file's contents before writing — used
+// to strip frontmatter fields that aren't valid for that target. When
+// `transform` is set the file is copied (not symlinked) so the user's
+// edits to the source don't break the target.
+const TARGETS = {
+  opencode: {
+    label: "OpenCode",
+    target: join(HOME, ".config", "opencode", "commands", "keystone.md"),
+    invoke: "/keystone",
+  },
+  claude: {
+    label: "Claude Code",
+    target: join(HOME, ".claude", "commands", "keystone.md"),
+    invoke: "/keystone",
+  },
+  copilot: {
+    label: "GitHub Copilot CLI",
+    target: join(HOME, ".copilot", "agents", "keystone.md"),
+    invoke: "copilot --agent=keystone --prompt '<idea>'",
+    // Copilot agent frontmatter doesn't recognize opencode's `agent:` field.
+    // Strip that one line; the rest is fine.
+    transform: (src) => src.replace(/^agent:\s*\S+\s*\n/m, ""),
+  },
+};
+
+const VALID_TARGETS = Object.keys(TARGETS);
+
+function parseArgs() {
+  const argv = process.argv.slice(2);
+  const positional = [];
+  const flags = new Set();
+  let targetSpec = null;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--force" || a === "--copy" || a === "--dev") {
+      flags.add(a.slice(2));
+    } else if (a === "--target" || a === "-t") {
+      targetSpec = argv[++i];
+    } else if (a.startsWith("--target=")) {
+      targetSpec = a.slice("--target=".length);
+    } else if (!a.startsWith("--")) {
+      positional.push(a);
+    }
+  }
+  const cmd = positional[0] || "install";
+  const targets = resolveTargets(targetSpec);
+  return { cmd, targets, force: flags.has("force"), copy: flags.has("copy"), dev: flags.has("dev") };
+}
+
+function resolveTargets(spec) {
+  if (!spec || spec === "opencode") return ["opencode"];
+  if (spec === "all") return VALID_TARGETS.slice();
+  const requested = spec.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const t of requested) {
+    if (!VALID_TARGETS.includes(t)) {
+      err(`unknown target: ${t}. valid: ${VALID_TARGETS.join(", ")}, all`);
+      process.exit(2);
+    }
+  }
+  return requested;
+}
 
 function log(msg) { process.stdout.write(`[opencode-keystone] ${msg}\n`); }
 function err(msg) { process.stderr.write(`[opencode-keystone] ${msg}\n`); }
@@ -47,64 +105,101 @@ function existingKind(p) {
   }
 }
 
-function install() {
+function installOne(targetKey, { force, copy, dev }) {
+  const t = TARGETS[targetKey];
   if (!existsSync(SOURCE)) {
     err(`source not found: ${SOURCE}`);
     process.exit(1);
   }
-  mkdirSync(TARGET_DIR, { recursive: true });
+  mkdirSync(dirname(t.target), { recursive: true });
 
-  const kind = existingKind(TARGET);
+  const kind = existingKind(t.target);
   if (kind !== "missing" && !force) {
-    err(`refusing to overwrite existing ${TARGET} (${kind}). re-run with --force to replace.`);
-    process.exit(1);
+    err(`${t.label}: refusing to overwrite existing ${t.target} (${kind}). re-run with --force to replace.`);
+    return false;
   }
-  if (kind !== "missing") rmSync(TARGET, { force: true });
+  if (kind !== "missing") rmSync(t.target, { force: true });
 
-  if (copy && !dev) {
-    copyFileSync(SOURCE, TARGET);
-    log(`copied ${SOURCE} -> ${TARGET}`);
+  if (t.transform) {
+    // transformed targets must be a real file, not a symlink — the source
+    // file would otherwise leak the untransformed content.
+    const transformed = t.transform(readFileSync(SOURCE, "utf8"));
+    writeFileSync(t.target, transformed);
+    log(`${t.label}: wrote (transformed) -> ${t.target}`);
+  } else if (copy && !dev) {
+    copyFileSync(SOURCE, t.target);
+    log(`${t.label}: copied -> ${t.target}`);
   } else {
-    // dev mode and default both symlink. dev mode is a hint that we expect
-    // the source to be a working git checkout; behaviour is identical.
-    symlinkSync(SOURCE, TARGET);
-    log(`symlinked ${TARGET} -> ${SOURCE}`);
-    if (dev) log("dev mode: edits to the source file are picked up live.");
+    try {
+      symlinkSync(SOURCE, t.target);
+      log(`${t.label}: symlinked -> ${t.target}`);
+    } catch (e) {
+      // fall back to copy if symlinks aren't permitted (e.g. some Windows configs)
+      copyFileSync(SOURCE, t.target);
+      log(`${t.label}: copied -> ${t.target} (symlink failed: ${e.message})`);
+    }
   }
-  log("done. invoke /keystone in opencode to use it.");
+  log(`${t.label}: invoke with \`${t.invoke}\``);
+  return true;
 }
 
-function uninstall() {
-  const kind = existingKind(TARGET);
+function uninstallOne(targetKey) {
+  const t = TARGETS[targetKey];
+  const kind = existingKind(t.target);
   if (kind === "missing") {
-    log(`nothing to remove at ${TARGET}`);
-    return;
+    log(`${t.label}: nothing to remove at ${t.target}`);
+    return true;
   }
-  rmSync(TARGET, { force: true });
-  log(`removed ${TARGET} (${kind})`);
+  rmSync(t.target, { force: true });
+  log(`${t.label}: removed ${t.target} (${kind})`);
+  return true;
 }
 
-function status() {
-  log(`source : ${SOURCE} (${existsSync(SOURCE) ? "ok" : "MISSING"})`);
-  log(`target : ${TARGET} (${existingKind(TARGET)})`);
+function statusOne(targetKey) {
+  const t = TARGETS[targetKey];
+  log(`${t.label.padEnd(20)} ${t.target} (${existingKind(t.target)})`);
 }
+
+const { cmd, targets, force, copy, dev } = parseArgs();
 
 switch (cmd) {
-  case "install": install(); break;
+  case "install": {
+    let allOk = true;
+    for (const k of targets) if (!installOne(k, { force, copy, dev })) allOk = false;
+    if (!allOk) process.exit(1);
+    break;
+  }
   case "uninstall":
-  case "remove": uninstall(); break;
-  case "status": status(); break;
+  case "remove": {
+    for (const k of targets) uninstallOne(k);
+    break;
+  }
+  case "status": {
+    log(`source: ${SOURCE} (${existsSync(SOURCE) ? "ok" : "MISSING"})`);
+    const list = targets.length === 1 && !process.argv.includes("--target") && !process.argv.includes("-t")
+      ? VALID_TARGETS // default `status` shows everything
+      : targets;
+    for (const k of list) statusOne(k);
+    break;
+  }
   case "help":
   case "--help":
-  case "-h":
-    log("usage: opencode-keystone <install|uninstall|status> [--force] [--copy] [--dev]");
-    log("  install         symlink commands/keystone.md into ~/.config/opencode/commands/");
-    log("  install --copy  copy instead of symlink (use this when installed via npm globally)");
-    log("  install --dev   same as default; signals you're editing the source live");
-    log("  install --force overwrite an existing keystone.md at the target");
-    log("  uninstall       remove the installed file");
-    log("  status          show source + target state");
+  case "-h": {
+    log("usage: opencode-keystone <command> [options]");
+    log("");
+    log("commands:");
+    log("  install      install the slash command (default)");
+    log("  uninstall    remove the installed file(s)");
+    log("  status       show source + target state");
+    log("");
+    log("options:");
+    log("  --target=<t> target CLI; one of: opencode (default), claude, copilot, all");
+    log("               or a comma-separated list, e.g. --target=opencode,claude");
+    log("  --force      overwrite an existing file at the target");
+    log("  --copy       copy instead of symlink (use when installed via npm globally)");
+    log("  --dev        symlink from source (default behavior; signals live-edit intent)");
     break;
+  }
   default:
     err(`unknown command: ${cmd}`);
     process.exit(2);

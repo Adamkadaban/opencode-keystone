@@ -1,14 +1,20 @@
 {
   "name": "opencode-keystone",
-  "version": "0.1.1",
-  "description": "Slash command for OpenCode that bootstraps a new project: research, foresight pass, PLAN.md, AGENTS.md, review gate, then parallel worktree execution",
+  "version": "0.2.0",
+  "description": "An opinionated /keystone slash command that bootstraps a new project: research, foresight pass, PLAN.md, AGENTS.md, review gate, then parallel worktree execution. Installable as an OpenCode plugin or for Claude Code and Copilot CLI.",
   "type": "module",
+  "exports": {
+    ".": {
+      "import": "./plugin/index.js"
+    }
+  },
   "bin": {
     "opencode-keystone": "./bin/install.mjs"
   },
   "files": [
     "bin",
     "commands",
+    "plugin",
     "install.sh",
     "README.md",
     "LICENSE"
@@ -20,7 +26,10 @@
   },
   "keywords": [
     "opencode",
+    "opencode-plugin",
     "opencode-command",
+    "claude-code",
+    "copilot-cli",
     "slash-command",
     "scaffolding",
     "project-bootstrap",
