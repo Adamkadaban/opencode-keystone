@@ -229,11 +229,21 @@ For Phase 1 (and each subsequent phase):
 
 ## Phase 8 — Project Wind-Down
 
-When the user signals the project is done (or going on indefinite pause):
+Trigger: the user **explicitly confirms the project is done and working** (final phase exit tests passed, MVP demo or release shipped, the user has said something like "we're done" / "ship it" / "this is good"). Do not run wind-down on a vague pause or after a single passing test.
 
-1. Confirm all worktrees are removed; then `rm -rf ../<project-slug>-wt/` if the directory is empty.
-2. Run the **Teardown** section from `PLAN.md`. Stop or delete any provisioned cloud resources. **Confirm with the user before any destructive cloud action.**
-3. Final commit / tag if appropriate.
+When triggered:
+
+1. **Worktrees** — confirm every worktree under `../<project-slug>-wt/` has been removed (`git worktree list`); then `rm -rf ../<project-slug>-wt/` once the directory is empty.
+2. **`references/`** — delete the directory entirely (`rm -rf references/`). It exists only as read-only context during development; once the project ships it is dead weight and a security/license risk to keep around. Already gitignored, so this is a local-only deletion.
+3. **Dev cloud resources** — anything provisioned during development for testing, fuzzing, building, or experimenting should be **torn down** (deleted, not just stopped). Walk the **Teardown** section of `PLAN.md` line by line: for each Azure / AWS / GCP / DigitalOcean / etc. resource tagged with the project name, list it back to the user, then execute the documented teardown command. **Confirm with the user before any destructive cloud action** — list every resource that will be deleted and require explicit "yes, delete" before proceeding. Production resources the shipped project depends on at runtime are NOT in scope here; only dev/test/CI-side infrastructure.
+4. **Verify** — after teardown, re-list any remaining resources tagged with the project name and report. If anything unexpected remains, surface it to the user.
+5. **Final commit / tag** — if the wind-down itself touches files (e.g. removing a `references/` entry from documentation, updating `PLAN.md` Teardown section to reflect what's been done), commit with `chore(wind-down): tear down dev resources and references/` and tag a final release if appropriate.
+
+If instead the project is going on **indefinite pause** (not done, just stepping away):
+
+- Stop (deallocate) cloud resources to halt billing, but do not delete them — they may be resumed.
+- Leave `references/` and `../<project-slug>-wt/` in place so a future session can pick up state.
+- Note the pause date and reason in `NOTES.md`.
 
 ---
 
