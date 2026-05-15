@@ -140,21 +140,28 @@ Create `AGENTS.md` at the project root. Write the rules below directly into it �
    - If auto-review isn't enabled on the repo for any reason, fall back to `copilot-review_request_copilot_review` to add Copilot as a reviewer per-PR.
    - Don't merge until: CI is green, the Copilot loop is complete (no unresolved Copilot threads), and at least one human (or supervising agent) has approved.
    - Note: CODEOWNERS does not work for this purpose — Copilot only submits `COMMENTED` reviews, never `APPROVED`, so it can't satisfy a required-approver rule. Use the auto-review ruleset, not CODEOWNERS.
-7. **Quality Gates and CI**
+7. **Documentation discipline (mandatory)** — Every PR that changes user-visible behavior updates the relevant docs in the **same PR**. Specifically:
+   - **README.md** must reflect: install steps, supported platforms / runtimes, CLI flags and subcommands, config schema, environment variables, the canonical "how to run" snippet. If a PR changes any of these, README is updated in the same PR.
+   - **`docs/`** (if it exists) must reflect: public API changes, protocol/format changes, deployment / upgrade / teardown procedure changes. If a PR touches code under a documented surface, the matching doc is updated in the same PR.
+   - **`PLAN.md`** is updated when a phase task is completed (tick the checkbox), when an Anticipated Risk materializes, or when scope shifts.
+   - **`CHANGELOG.md`** (if the project keeps one) gets a new entry under the next version's heading for every user-visible change.
+   - The Copilot review loop (section 6) and the human reviewer should explicitly check "are docs updated?" before approving. A PR that ships a feature without docs is incomplete and gets sent back, not merged with a follow-up doc PR promised.
+   - Internal refactors with no user-visible effect don't need doc updates. When in doubt, ask: *would a user reading the README a month from now be confused by this change?* If yes, update the docs.
+8. **Quality Gates and CI**
    - Project-specific exact commands for `lint`, `format`, `typecheck`, `test`, `build`. All of `lint`, `typecheck`, `test` must pass **locally** before opening a PR. Tests ship with implementation. Deterministic preferred.
    - CI uses **manual triggers only** (`workflow_dispatch`) to avoid burning Actions minutes on every push. The agent runs the full suite locally during development, then triggers CI exactly once per PR right before requesting merge: `gh workflow run test.yml --ref <branch>`.
    - Branch protection on `main` requires the test workflow to pass on the PR's head SHA before merge is allowed. Use a repo **Ruleset** (not classic branch protection) so a `workflow_dispatch` run satisfies the required check.
-8. **Parallel Work (Worktrees)** —
+9. **Parallel Work (Worktrees)** —
    - All worktrees for this project live in **one sibling directory**: `../<project-slug>-wt/<task-slug>/`. Single permission grant covers them all.
    - One agent per worktree. Max 3 concurrent.
    - Shared interfaces land in a small dedicated branch first.
    - `git worktree remove ../<project-slug>-wt/<task-slug>` immediately after PR merge.
    - When the project finishes / pauses indefinitely, `rm -rf ../<project-slug>-wt/`.
-9. **Resource Safety** — Treat hanging subprocesses as a correctness bug. Bounded timeouts on tests / fuzzers / CI polling. Sweep for leaks before each batch. Graceful kill first, force only if needed.
-10. **Cloud / Cost Discipline** *(only if the project uses cloud — Azure, AWS, GCP, etc.)* — Estimate cost before provisioning. Prefer cheapest tier / spot / serverless. Tag every resource with the project name. **Stop or delete** resources when work pauses or finishes. Document a one-command teardown in this file or `PLAN.md`. Never leave billing running overnight without an explicit kill-by date.
-11. **Decision Biases** — Smallest correct change. Simple and testable beats clever. Explicit machine-readable artifacts over prose. Reproducibility over convenience.
-12. **PLAN.md is the source of truth** — Read it before architectural changes. Don't advance past a phase boundary until exit tests pass. Update **Anticipated Risks** as new constraints surface.
-13. **Operational Memory** — Two artifacts hold knowledge that AGENTS.md and PLAN.md must not absorb (because both get bloated and ignored):
+10. **Resource Safety** — Treat hanging subprocesses as a correctness bug. Bounded timeouts on tests / fuzzers / CI polling. Sweep for leaks before each batch. Graceful kill first, force only if needed.
+11. **Cloud / Cost Discipline** *(only if the project uses cloud — Azure, AWS, GCP, etc.)* — Estimate cost before provisioning. Prefer cheapest tier / spot / serverless. Tag every resource with the project name. **Stop or delete** resources when work pauses or finishes. Document a one-command teardown in this file or `PLAN.md`. Never leave billing running overnight without an explicit kill-by date.
+12. **Decision Biases** — Smallest correct change. Simple and testable beats clever. Explicit machine-readable artifacts over prose. Reproducibility over convenience.
+13. **PLAN.md is the source of truth** — Read it before architectural changes. Don't advance past a phase boundary until exit tests pass. Update **Anticipated Risks** as new constraints surface.
+14. **Operational Memory** — Two artifacts hold knowledge that AGENTS.md and PLAN.md must not absorb (because both get bloated and ignored):
     - **`NOTES.md`** — append-only running journal of solved problems, gotchas, dead-ends, surprising behavior. Catches the *"agent reintroduces a bug we already fixed"* failure mode.
       - **Read on entry, mandatory.** Before any non-trivial task, run `tail -n 100 NOTES.md` and `grep -i` it for keywords from the task description. If the task touches a specific file, also `grep` for that file path.
       - **Write on exit, mandatory.** After solving any non-obvious problem, hitting a dead-end, or discovering surprising behavior, append an entry **before closing the task**. Format:
@@ -220,7 +227,7 @@ For Phase 1 (and each subsequent phase):
 1. Create the worktree directory: `../<project-slug>-wt/`. All worktrees go here so a single permission grant covers them all.
 2. For each parallel task: `git worktree add ../<project-slug>-wt/<task-slug> -b <type>/<task-slug>`.
 3. Spawn one sub-agent per worktree, **max 3 concurrent** (sequential waves if more).
-4. Each sub-agent: implements the task, writes tests with the code, runs the project's `lint` / `typecheck` / `test` **locally to green**, commits in conventional-commit increments, pushes. **A PR is opened only after the work is complete and tests pass locally** — PRs are not checkpoints.
+4. Each sub-agent: implements the task, writes tests with the code, **updates `README.md`, `docs/`, and any other user-facing docs to reflect the change in the same commit/PR** (per AGENTS.md section 7), runs the project's `lint` / `typecheck` / `test` **locally to green**, commits in conventional-commit increments, pushes. **A PR is opened only after the work is complete, tests pass locally, AND docs are updated** — PRs are not checkpoints, and a feature without docs is not "complete".
 5. After the PR opens, **load the `copilot-second-opinion` skill** and let it drive the review loop end-to-end. The skill knows how to wait for Copilot's review on the PR's head SHA, fetch each thread, decide on a response, push fixes, reply, and resolve threads. Repeat until Copilot is silent on the current head. Do not skip this step or shortcut it — the loop is mandatory before merge.
 6. **Pre-merge CI gate**: trigger the test workflow exactly once on the PR's head — `gh workflow run test.yml --ref <branch>` — and wait for it to complete green. Do not merge if it's red. Re-trigger only after pushing a fix.
 7. Squash-merge (the squash commit body should include the PR description's bullet summary). Delete branch. `git worktree remove ../<project-slug>-wt/<task-slug>`.
