@@ -62,7 +62,13 @@ Never silently overwrite. Never delete files outside the Keystone-managed set. I
    - Fall back to `login` **only** if `name` is null/empty.
    - Never invent a real-name expansion from a GitHub username (e.g. don't split a CamelCase login into first/last words). If both `name` and `login` are missing, ask the user once.
 5. **License discovery.** Enumerate every dependency you'll pull in, every project in `references/` (an AI-rewrite of a project counts as a dependency for licensing purposes even if it isn't a runtime dep), and the source license of any code being adapted. For each, record the SPDX identifier. Flag the most restrictive obligation you'll inherit (attribution required, share-alike, source-availability, patent grant, AGPL network clause, etc.). This drives the license choice in Phase 3.
-6. Produce a short internal summary (do not paste it to the user yet) of what exists, what we're reusing, what we're inventing, and the inherited license constraints.
+6. **Dependency health & canonicality check (mandatory).** For every significant runtime dependency from step 5, *also* record:
+   - **First-party vs. third-party**: is this dep authored/maintained by the upstream of the thing it wraps, or is it a community fork? (Example failure: choosing the Python `opencode-ai` package without noticing it's `anomalyco/opencode-sdk-python`, a community fork stale since January, when the canonical SDK is `@opencode-ai/sdk` (TypeScript) shipped hourly from inside the upstream repo.)
+   - **Last commit / last release date**: anything older than 90 days gets a ⚠️ flag. Anything older than 1 year is a hard stop unless explicitly justified.
+   - **Language ecosystem match**: if the dep's primary maintained version is in language X but you're planning to use language Y bindings, flag it. The Y bindings are likely a third-party port.
+   - **Whether a canonical alternative exists in a different ecosystem**: e.g. "the canonical SDK is TypeScript-native; the Python binding is a stale fork" → this should drive language choice in Phase 3, not be discovered after writing 4 PRs.
+   This check is what catches the worst-class plan failure: locking in a stack that has to be ripped out later. If any flag fires, the foresight pass (Phase 2) must address it explicitly.
+7. Produce a short internal summary (do not paste it to the user yet) of what exists, what we're reusing, what we're inventing, the inherited license constraints, and any dep-health flags from step 6.
 
 ## Phase 2 — Foresight Pass
 
@@ -90,11 +96,23 @@ Create `PLAN.md` at the project root. Structure:
 2. **Architecture** — modules / crates / packages and their boundaries.
 3. **Repo Layout** — directory tree of what will exist.
 4. **MVP** — smallest concrete demo that proves the design works end-to-end. Real, not stubbed.
-5. **Phased Checklist** — phases 0..N. Each phase has:
-   - Goal (one sentence).
-   - Exit test (objective, runnable).
-   - Numbered checklist of tasks with `- [ ]` checkboxes.
-   - Parallel-work split: which tasks can run concurrently in their own worktrees.
+5. **Phased Checklist** — phases 0..N. **Every** phase (not just Phase 1) gets the same level of detail. Vague one-line milestones like *"M2 — SQLite + sync + reconciler (1 day). Persistent metadata; signal_hash; tombstones."* are forbidden — they force the agent to invent the wave breakdown at execution time, which it does badly (defaults to "one task per wave, sequential"). Each phase has:
+   - **Goal** — one sentence.
+   - **Exit test** — an objective, runnable command + pass criterion (e.g. *"`bun run dev list` prints every session and `bun test` passes 90+ tests"*). Not "M2 done" — a thing you can run.
+   - **Deliverable checklist** — `- [ ]` checkbox list of 5–15 concrete items per phase. Each item is a file, a function, a feature, or a wired behavior — granular enough that one subagent can complete it in one PR. Cross off as completed.
+   - **Parallel-work split table** — the structured breakdown of which deliverables can run concurrently:
+
+     ```
+     | Wave | Worktree slug | Depends on | Tasks |
+     |---|---|---|---|
+     | 1 (solo) | bootstrap-skeleton | — | pyproject.toml, paths.ts, log.ts, config.ts |
+     | 2 (parallel ×3) | sdk-client | wave 1 | sdk/{client,models,errors}.ts + tests |
+     | 2 (parallel ×3) | daemon-manager | wave 1 | daemon/{manager,health,pidfile}.ts + tests |
+     | 2 (parallel ×3) | storage-layer | wave 1 | storage/{db,sessionRepo,tagRepo}.ts + tests |
+     | 3 (solo) | wire-cli | wave 2 | cli command implementations + integration tests |
+     ```
+
+     Wave 2 should usually have 2–3 parallel tasks. If a phase has only one task, it's probably scoped wrong — split it. Don't write *"all of Phase 2 in one wave"* — that produces serial execution.
 6. **Anticipated Risks** — from Phase 2, with mitigations. This is **forward-looking foresight only**, not a place for retrospective gotchas. Operational lessons learned during execution belong in `NOTES.md` (see the AGENTS.md template's Operational Memory section), not here.
 7. **Extension Points** — things we plan for but won't build yet, with the hook they'll attach to.
 8. **Teardown** — one-command project teardown (stop/delete cloud resources, drop `../<project>-wt/`, etc.).
@@ -133,6 +151,7 @@ Create `AGENTS.md` at the project root. Write the rules below directly into it �
    - **Conventional Commits mandatory** for every commit and PR title. Types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `style`. Breaking: `feat(scope)!:` with `BREAKING CHANGE:` footer.
    - One commit = one logical change that builds and passes tests. No `WIP` / `fix` / `updates`.
    - One PR per issue. **Squash-merge to `main`** so every commit on `main` is a complete tested unit (keeps `git bisect` reliable, makes reverts trivial, makes `git log main` read like a changelog). The squash commit body should include the PR's bullet-point summary so the linked PR is easy to find from `git log`. Detailed per-commit history is preserved on the PR itself on GitHub.
+   - **Side-quest gate.** Every PR must reference exactly one open issue (`Closes #N` or `Refs #N` in the body). PRs without a linked issue are **side-quests** — unsolicited work the agent decided to do (renames, cleanup, dep upgrades, refactors, "while I'm here…" rewrites). Side-quests are allowed but must (a) be labeled `chore: side-quest`, (b) include a one-line *"Why this is unsolicited:"* justification in the PR body, and (c) stay small (single concern, no scope creep). When in doubt, file the issue first and reference it — that turns the side-quest into a regular task. The Python→TypeScript pivot, mid-flow renames, and other unrequested rewrites that consume hours of subagent time without a tracked task are exactly what this rule prevents.
    - Delete branch after merge.
    - **Only merge code that is confirmed working.** A PR is opened only when the work is complete and the test suite passes. PRs are not checkpoints. If a PR turns out to be incomplete, close it or convert to draft — do not merge it "to be fixed later".
 6. **Pull Request Review (mandatory)** — Every PR runs the Copilot review loop. The flow:
@@ -206,11 +225,15 @@ Keep the file scannable. If a section genuinely doesn't apply (e.g. no cloud), s
 
 After both files exist:
 
-1. Print a concise summary to the user: file paths, the phase count, the parallel splits for phase 1, the anticipated risks.
+1. Print a concise summary to the user: file paths, the phase count, the parallel splits for **every phase** (not just phase 1), the anticipated risks, the dep-health flags from Phase 1 step 6.
 2. Tell the user explicitly: "Review `PLAN.md` and `AGENTS.md`. Reply with changes, or say 'go' to start phase 1."
 3. **Stop. Do not spawn subagents. Do not start work.** Wait for the user's response.
 
 If the user requests changes, edit the files and present the diff. Loop until they say go.
+
+### Anti-pivot rule (post-gate)
+
+Once the user says "go", the foundational stack choices (primary language, primary SDK, primary framework) are **locked**. If during Phase 6+ execution it becomes clear a foundational choice was wrong (e.g. the SDK turns out to be a stale fork, the chosen runtime can't do something we need), **stop and re-gate** — surface the discovery to the user, propose the new stack with rationale, and wait for explicit go-ahead before throwing out merged work. Do *not* silently rewrite everything in a "refactor" PR. The Python→TypeScript rewrite that wiped out 4 merged PRs in opencode-hub is the failure mode this rule prevents.
 
 ## Phase 6 — Bootstrap the Repo
 
@@ -238,7 +261,7 @@ Once approved:
 9. Create the GitHub repo via the **GitHub MCP** (private/public per Phase 0 answer). Push `main`.
 10. **Enable automatic Copilot review on `main`** by calling the `copilot-review` MCP's `enable_copilot_auto_review` tool with the new repo. This creates a repository ruleset that auto-requests Copilot as a reviewer on every new PR — no per-PR request needed afterward. If the tool reports the ruleset wasn't created (insufficient permissions, MCP unavailable), record this in `NOTES.md` with date and consequence ("PRs need manual `request_copilot_review` until ruleset is created"). Do *not* use CODEOWNERS as a substitute — Copilot only submits `COMMENTED` reviews and won't satisfy required-approver rules.
 11. Configure a repo **Ruleset** on `main` that requires the `test` workflow to pass before merge. Use the GitHub MCP / API; if a Ruleset is not creatable programmatically with the user's permissions, print the exact UI steps for the user to do it once: `Settings → Rules → Rulesets → New branch ruleset → Target main → Require status checks to pass → add 'test'`.
-12. Open a GitHub issue for **every** task in Phase 1's checklist. Title = task summary. Body = the checklist item plus a link to the relevant `PLAN.md` section. Issues filed via the GitHub MCP are authored by the user's authenticated session, so `user.login` will be the repo owner — required for AGENTS.md section 16 (Issue Source Verification).
+12. Open a GitHub issue for **every task in every wave of Phase 1's parallel-work split** (not one issue per milestone). Each issue corresponds to exactly one worktree's worth of work — one parallel-able unit, sized so one subagent can complete it in one PR. **Do not lump multiple deliverables into one issue.** If Wave 2 has 3 parallel tasks, that's 3 issues. If a single deliverable has more than ~3 distinct sub-files, split it further. Issues filed via the GitHub MCP are authored by the user's authenticated session, so `user.login` will be the repo owner — required for AGENTS.md section 16 (Issue Source Verification).
 13. Record the repo owner's GitHub login (from Phase 1's `github_get_me` call) in `NOTES.md` under a heading `## Trusted issue authors` — exact format:
     ```
     ## Trusted issue authors
@@ -252,15 +275,15 @@ Once approved:
 
 For Phase 1 (and each subsequent phase):
 
-1. Create the worktree directory: `../<project-slug>-wt/`. All worktrees go here so a single permission grant covers them all.
-2. For each parallel task: `git worktree add ../<project-slug>-wt/<task-slug> -b <type>/<task-slug>`.
-3. Spawn one sub-agent per worktree, **max 3 concurrent** (sequential waves if more).
+1. **If `PLAN.md` doesn't have a parallel-work split for the current phase, you cannot enter the phase yet.** Pause, write the wave breakdown into `PLAN.md` (matching the structure mandated in Phase 3 step 5), file the per-wave-task issues per Phase 6 step 12, *then* proceed. The wave split is not optional and not generated at runtime — it must be in `PLAN.md` first so it's reviewable.
+2. Create the worktree directory: `../<project-slug>-wt/`. All worktrees go here so a single permission grant covers them all.
+3. For each parallel task in the current wave: `git worktree add ../<project-slug>-wt/<task-slug> -b <type>/<task-slug>`. **Spawn all the wave's subagents in one batch**, not one at a time — that's the entire point of having a wave. Max 3 concurrent (sequential mini-waves if a wave has 4+ tasks).
 4. Each sub-agent: implements the task, writes tests with the code, **updates `README.md`, `docs/`, and any other user-facing docs to reflect the change in the same commit/PR** (per AGENTS.md section 7), runs the project's `lint` / `typecheck` / `test` **locally to green**, commits in conventional-commit increments, pushes. **A PR is opened only after the work is complete, tests pass locally, AND docs are updated** — PRs are not checkpoints, and a feature without docs is not "complete".
 5. After the PR opens, **load the `copilot-second-opinion` skill** and let it drive the review loop end-to-end. The skill knows how to wait for Copilot's review on the PR's head SHA, fetch each thread, decide on a response, push fixes, reply, and resolve threads. Repeat until Copilot is silent on the current head. Do not skip this step or shortcut it — the loop is mandatory before merge.
 6. **Pre-merge CI gate**: CI is triggered automatically by the `pull_request` workflow on every push to the PR branch (intermediate runs are auto-cancelled by the concurrency group). Wait for the run on the current head SHA to complete green. Do not merge if it's red. If the latest run is red, push a fix — the new push triggers a fresh run and cancels the red one.
 7. Squash-merge (the squash commit body should include the PR description's bullet summary). Delete branch. `git worktree remove ../<project-slug>-wt/<task-slug>`.
-8. Tick the box in `PLAN.md`. Roll the tick into the merging PR if the same change touches code; otherwise commit it alone with `docs(plan): tick <task>`.
-9. When the phase's exit test passes, advance. Update `PLAN.md`'s **Anticipated Risks** with anything you learned.
+8. Tick the `- [ ]` checkbox in `PLAN.md` for the completed deliverable. Roll the tick into the merging PR if the same change touches code; otherwise commit it alone with `docs(plan): tick <task>`.
+9. When all deliverables in the current wave's checklist are ticked, advance to the next wave. When all waves of the current phase are done and the phase's exit test passes, advance to the next phase. Update `PLAN.md`'s **Anticipated Risks** with anything you learned.
 
 ## Phase 8 — Project Wind-Down
 
