@@ -1,0 +1,44 @@
+{
+  "name": "opencode-keystone",
+  "version": "0.1.0",
+  "description": "Slash command for OpenCode that bootstraps a new project: research, foresight pass, PLAN.md, AGENTS.md, review gate, then parallel worktree execution",
+  "type": "module",
+  "bin": {
+    "opencode-keystone": "./bin/install.mjs"
+  },
+  "files": [
+    "bin",
+    "commands",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "install:dev": "node ./bin/install.mjs install --dev --force",
+    "uninstall": "node ./bin/install.mjs uninstall",
+    "status": "node ./bin/install.mjs status"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-command",
+    "slash-command",
+    "scaffolding",
+    "project-bootstrap",
+    "plan",
+    "agents-md",
+    "worktree"
+  ],
+  "author": "Adam Hassan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adamkadaban/opencode-keystone.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Adamkadaban/opencode-keystone/issues"
+  },
+  "homepage": "https://github.com/Adamkadaban/opencode-keystone#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}
