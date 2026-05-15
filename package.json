@@ -1,6 +1,6 @@
 {
   "name": "opencode-keystone",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Slash command for OpenCode that bootstraps a new project: research, foresight pass, PLAN.md, AGENTS.md, review gate, then parallel worktree execution",
   "type": "module",
   "bin": {
