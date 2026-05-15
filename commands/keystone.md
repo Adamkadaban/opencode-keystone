@@ -112,7 +112,7 @@ MVP comes first. Don't bloat phase 1 with nice-to-haves.
 
 ## Phase 4 — Write `AGENTS.md`
 
-Create `AGENTS.md` at the project root. It must be **self-contained** — do not assume a global agents file exists. Include the universal rules below verbatim (or with project-specific tweaks where noted), plus the project-specific sections.
+Create `AGENTS.md` at the project root. Write the rules below directly into it — no preamble, no meta-commentary about how the file is structured, no statement that it is "self-contained" or "for contributors". Just the rules. The file must stand on its own without referencing any external agents file (don't link to `~/.config/opencode/AGENTS.md` or similar).
 
 ### Required sections
 
