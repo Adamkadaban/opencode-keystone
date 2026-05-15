@@ -119,11 +119,12 @@ Create `AGENTS.md` at the project root. Write the rules below directly into it �
 1. **Project context** — one paragraph + link to `PLAN.md`.
 2. **Code Style**
    - Self-documenting code first. Clear names, small functions.
-   - Comments only when the *why* is non-obvious. Never narrate what the code does.
+   - Comments only when the *why* is non-obvious (tricky math, workarounds, invariants). Never narrate what the code does.
    - No banner / decorative comments.
    - Docstrings on non-trivial / exported APIs only. Keep them short.
    - No TODO graveyards — open an issue.
    - Errors are never swallowed. Throw only for true bugs.
+   - **Information flows one way: docs reference code, not the other way around.** Code comments must not back-reference in-repo docs (`PLAN.md`, `AGENTS.md`, `NOTES.md`, `docs/adr/...`). Don't write `// per PLAN.md §5`, `// see NOTES.md 2026-05-14`, `// verified per references/opencode/...`. If you need to record *why* a piece of code looks the way it does, put the note in `NOTES.md` or an ADR pointing at the code (`file_path:line`), not in a comment pointing at the doc. External references (GitHub issue numbers, RFCs, vendor bug tracker links, upstream commit SHAs) are fine — they're stable and live outside the repo.
 3. **Working with Libraries and GitHub** — For library docs, use **Context7 MCP** first (`context7_resolve-library-id` → `context7_query-docs`); fall back to upstream source in `references/` only if Context7 doesn't have the library. For every GitHub operation (user info, repo, issues, PRs, comments, review threads), use the **GitHub MCP** first; fall back to the `gh` CLI only if the MCP is unavailable. Do not trust training knowledge for library APIs and do not query the web for things either MCP can answer. Verify versions match the project manifest.
 4. **`references/` convention** — read-only, gitignored, never imported, never committed. List what's currently in it and why.
 5. **Git Workflow**
