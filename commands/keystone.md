@@ -251,16 +251,52 @@ Once approved:
 5. Seed `NOTES.md` with a one-line header (`# Notes` and a sentence pointing readers at the AGENTS.md Operational Memory section) — empty body, ready for the first entry.
 6. Seed `docs/adr/0000-record-architecture-decisions.md` — the meta-ADR establishing that this project uses ADRs. Status: Accepted. Context: short. Decision: "Use MADR-format ADRs in `docs/adr/` for non-trivial architectural decisions." Consequences: list the read-before / write-after rules from AGENTS.md.
 7. First commit: `chore: initial project bootstrap` containing `PLAN.md`, `AGENTS.md`, `LICENSE`, `CONTRIBUTING.md`, `NOTES.md`, `docs/adr/0000-record-architecture-decisions.md`, `.gitignore`, `.github/workflows/test.yml`, `README.md` (per step 8 below), and any minimal scaffolding (e.g. `pyproject.toml`, `Cargo.toml`, `package.json`, `Makefile`).
-8. **Write `README.md` in the "pretty" style** (matches the user's other repos like `eldraw`, `opencode-keystone`). Required structure:
-   - Centered title with HTML: `<h1 align="center">project-name</h1>`
-   - Centered one-line tagline immediately under: `<p align="center">one sentence pitch.</p>`
-   - Centered shield row in a `<p align="center">` block. Always include the `made_with_vibes` pink badge: `<img alt="made with vibes" src="https://img.shields.io/badge/made_with-vibes-ff69b4">`. Plus shields appropriate for the stack — license, version, build status, package-manager — whichever apply.
-   - `---` divider, then a one-paragraph pitch under "what this is".
-   - `## Highlights` (or equivalent) — 4–8 bullets using `**bold-keyword** — explanation` pattern. Concise, scannable.
-   - `## Install` (or `## Quickstart` for non-distributable projects) — terse, copy-pasteable.
-   - `## Use` — minimal example.
-   - `## License` at bottom, single line: `[MIT](./LICENSE)` (or matching SPDX from Phase 3).
-   The README is the project's face. Plain `# title` + bullet list is not the bar — visual restraint with deliberate composition is. Refer to https://github.com/Adamkadaban/eldraw#readme for the canonical shape if unsure.
+8. **Write `README.md` in the "pretty" style.** Required structure (centered title block + shields + scannable highlights, not plain prose):
+
+   ```markdown
+   <h1 align="center">project-name</h1>
+
+   <p align="center">
+     One-sentence tagline that says what this does.
+   </p>
+
+   <p align="center">
+     <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue"></a>
+     <img alt="made with vibes" src="https://img.shields.io/badge/made_with-vibes-ff69b4">
+   </p>
+
+   ---
+
+   One paragraph: what this is and the single most important reason to use it.
+
+   ## Highlights
+
+   - **Bold keyword** — one-line explanation of a notable feature.
+   - **Bold keyword** — another. Aim for 4–8 bullets, scannable.
+
+   ## Install
+
+   ```sh
+   one-line install command
+   ```
+
+   ## Use
+
+   ```sh
+   minimal example invocation
+   ```
+
+   ## License
+
+   [MIT](./LICENSE)
+   ```
+
+   Rules for the template above:
+   - The `made_with_vibes` badge is always included (`https://img.shields.io/badge/made_with-vibes-ff69b4`).
+   - Add stack-appropriate shields next to license: npm version, PyPI version, crates.io version, CI status, supported-platform — whichever apply.
+   - Replace the SPDX in the badge URL and bottom link with the actual SPDX chosen in Phase 3.
+   - `## Install` and `## Use` are the floor — add `## Configuration` / `## Hacking on it` / `## Releasing` only if they genuinely apply.
+   - Plain `# title` + a wall of prose is not the bar. Visual restraint with deliberate composition is.
 9. Create the GitHub repo via the **GitHub MCP** (private/public per Phase 0 answer). Push `main`.
 10. **Enable automatic Copilot review on `main`** by calling the `copilot-review` MCP's `enable_copilot_auto_review` tool with the new repo. This creates a repository ruleset that auto-requests Copilot as a reviewer on every new PR. The `copilot-second-opinion` skill will lazily enable it if missing, but doing it here at bootstrap saves the first PR from failing. If the tool reports the ruleset wasn't created (insufficient permissions, MCP unavailable), record this in `NOTES.md` so the agent knows to fall back to per-PR `request_copilot_review`.
 11. Configure a repo **Ruleset** on `main` that requires the `test` workflow to pass before merge. Use the GitHub MCP / API; if a Ruleset is not creatable programmatically with the user's permissions, print the exact UI steps for the user to do it once: `Settings → Rules → Rulesets → New branch ruleset → Target main → Require status checks to pass → add 'test'`.
