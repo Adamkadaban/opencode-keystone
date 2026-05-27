@@ -346,9 +346,92 @@ For Phase 1 (and each subsequent phase):
 6. **Pre-merge gate**: don't reach for `gh pr merge` or any `sleep N && gh pr checks` recheck loop. Both are wrong tools for this. Use the `copilot-second-opinion` skill's `copilot-review_safe_merge_pr` — it gates merge on Copilot-reviewed-current-HEAD + zero unresolved threads + all checks green, and uses `gh run watch` internally for any waiting. If the merge fails, the returned `gates` object tells you which condition failed and how to fix it.
 7. After `copilot-review_safe_merge_pr` returns success, the merge is already done (squash by default), the branch is deleted, and CI was gated on. Run `git worktree remove ../<project-slug>-wt/<task-slug>` to clean up the local worktree.
 8. Tick the `- [ ]` checkbox in `PLAN.md` for the completed deliverable. Roll the tick into the merging PR if the same change touches code; otherwise commit it alone with `docs(plan): tick <task>`.
-9. When all deliverables in the current wave's checklist are ticked, advance to the next wave. When all waves of the current phase are done and the phase's exit test passes, advance to the next phase. Update `PLAN.md`'s **Anticipated Risks** with anything you learned.
+9. When all deliverables in the current wave's checklist are ticked, advance to the next wave. When all waves of the current phase are done and the phase's exit test passes end-to-end against the real target system, advance to the next phase. Update `PLAN.md`'s **Anticipated Risks** with anything you learned. **When all phases in `PLAN.md` are complete** (every checklist box ticked, final phase exit test green on the real system, all open issues closed, all PRs merged, no unmerged worktrees), advance to Phase 8 — Finalization Review. Do not idle on issue-polling once this condition is met; finalize.
 
-## Phase 8 — Project Wind-Down
+## Phase 8 — Finalization Review
+
+Trigger: every condition from Phase 7 step 9's completion check is true — all `PLAN.md` checkboxes ticked, final phase exit test green on the real system, every issue closed, every PR merged, no unmerged worktrees. This is when the project transitions from "in-flight Keystone-scaffolded build" to "stable shipped project".
+
+When triggered:
+
+1. **Run the proof.** Execute the full test matrix one more time, capturing pass/fail counts and any coverage numbers the toolchain produces:
+   - `lint` — must be clean.
+   - `typecheck` — must be clean.
+   - `unit tests` — record count of passed / failed / skipped.
+   - `integration tests` — same.
+   - Any documented end-to-end demo or smoke test from `PLAN.md`'s exit-test criteria — must succeed on the real target system.
+   If anything fails, fix it before continuing — finalization on a red bar is a bug. File issues for any real test failures and go back to Phase 7.
+2. **Produce a structured summary for the user** (a single message, scannable):
+   - **What this project does** — one paragraph, plain English. Not the README pitch, not the elevator copy — a real "here's what it actually does and what works".
+   - **What was built** — table or bullet list of modules / commands / features / endpoints, each with its file path and a one-line description of what it does.
+   - **Test results** — `N unit pass / M integration pass / coverage X%` or equivalent. Cite the actual command output.
+   - **Known limitations** — anything from `NOTES.md`'s open gotchas, anything in `PLAN.md`'s Anticipated Risks that materialized and wasn't fully resolved, any `TODO` / `FIXME` comments that remain (use `grep`).
+   - **Stats** — total PRs merged, total issues closed, total ADRs written, total `NOTES.md` entries. One line.
+   - **What happens next if you finalize** — list the four mechanical changes (delete `PLAN.md`, replace `AGENTS.md` with the mature template below, commit, then Phase 9 wind-down).
+3. **Ask the user one question** — exactly one, no follow-ups: *"Project appears complete. Finalize? (yes / not yet / wait)"*.
+   - **yes** → proceed to step 4.
+   - **not yet** → the user wants to keep iterating. Return to Phase 7's issue-polling loop. Do not finalize.
+   - **wait** → user wants time. End the turn cleanly. The user will re-prompt when ready.
+4. **If yes — execute finalization on a new branch** `chore/finalize-project`:
+   - **Delete `PLAN.md`**. Its job is done; the work is shipped. Anything still worth knowing belongs in `README.md`, `NOTES.md`, or `docs/adr/`.
+   - **Replace `AGENTS.md`** with the mature-project template below, filled in for this project. This strips out all the in-flight Keystone scaffolding (phase workflow, parallel worktrees, autonomy rules, copilot-second-opinion mandate, issue source verification, etc.) — none of that is relevant to a stable repo. Keep code style, build/test/lint commands, and PR conventions; that's it.
+   - **Update `README.md`** if anything is out of date with the final shipped state (install instructions, supported platforms, feature list).
+   - **Commit on the branch**: `chore: finalize project — replace bootstrap scaffolding with stable guidance` (use Conventional Commits; this is one commit, not a series). Body: short bullet list of the three changes above.
+   - **Open the PR**, run the standard `copilot-second-opinion` loop, merge via `copilot-review_safe_merge_pr`.
+5. **After the merge**, advance to Phase 9 — Wind-Down.
+
+### Mature-project AGENTS.md template
+
+Fill the placeholders and replace the entire previous `AGENTS.md` with this. Keep it short — under 60 lines. Resist the urge to port over the Keystone-specific stuff (NOTES.md ritual, ADR triggers, autonomy rules, parallel worktree convention, copilot review mandate). Those served the in-flight build; they're not project-level rules.
+
+```markdown
+# AGENTS.md
+
+<project-name> — <one-line description of what this project does>.
+
+## Build, lint, test
+
+```sh
+<install-command>          # e.g. uv sync / bun install / cargo build
+<lint-command>             # e.g. ruff check . / biome check / cargo clippy
+<typecheck-command>        # e.g. ty / tsc --noEmit / cargo check
+<test-command>             # e.g. uv run pytest / bun test / cargo test
+<build-command>            # e.g. cargo build --release / bun build --compile
+```
+
+All four (lint, typecheck, test, build) must pass before opening a PR.
+
+## Code Style
+
+- Self-documenting code first. Clear names, small functions.
+- Comments only when the *why* is non-obvious (tricky math, workarounds, invariants). Never narrate what the code does.
+- No banner / decorative comments.
+- Docstrings on non-trivial / exported APIs only.
+- No TODO graveyards — open an issue.
+- Errors are never swallowed.
+- Information flows one way: docs reference code, not the other way around. Don't add comments back-referencing `NOTES.md`, `docs/adr/`, or other in-repo docs.
+
+## Pull Requests
+
+- Branch per change. Conventional Commits for every commit and PR title (`type(scope): subject`; types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `perf`, `build`, `ci`, `style`; breaking: `type!:` with `BREAKING CHANGE:` footer).
+- One PR per logical change. Squash-merge to `main`.
+- Lint + typecheck + tests pass locally before opening.
+- Update `README.md` and any other affected docs in the same PR as the code change.
+- CI runs automatically on the PR; merge only when checks are green.
+
+## Historical context
+
+- `NOTES.md` — running journal of solved problems, gotchas, surprising behavior. Append to it when you discover something non-obvious; `grep` it before debugging something that looks familiar.
+- `docs/adr/` — architectural decisions, MADR format. Read the relevant one before contradicting a prior choice.
+
+## License
+
+<SPDX-id> — see [LICENSE](./LICENSE).
+```
+
+That's the entire mature `AGENTS.md`. Keep it under 60 lines; the project should now be developable by anyone (human or AI) using normal practices, not the heavy bootstrap workflow.
+
+## Phase 9 — Project Wind-Down
 
 Trigger: the user **explicitly confirms the project is done and working** (final phase exit tests passed, MVP demo or release shipped, the user has said something like "we're done" / "ship it" / "this is good"). Do not run wind-down on a vague pause or after a single passing test.
 
