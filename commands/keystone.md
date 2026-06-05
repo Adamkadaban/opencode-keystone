@@ -231,7 +231,7 @@ Create `AGENTS.md` at the project root. Write the rules below directly into it �
 17. **Finalization (mandatory).** When **all** of these are true at the same time, the project is done and the agent transitions it from in-flight Keystone scaffolding to a stable shipped repo — **do not keep polling for new issues**, finalize:
     - Every checkbox in `PLAN.md` is ticked.
     - The final phase's exit test passes end-to-end against the real target system (not just local fixtures).
-    - Every GitHub issue is closed.
+    - Every GitHub issue is closed. **This includes every hacky-fix IOU issue filed during development per §18** — that's the enforcement mechanism that keeps deferred fixes from being silently abandoned at "complete".
     - Every PR is merged.
     - No worktrees under `../<project-slug>-wt/` are unmerged.
 
@@ -258,6 +258,24 @@ Create `AGENTS.md` at the project root. Write the rules below directly into it �
     5. After the finalization PR merges, proceed to project wind-down: remove worktrees, delete `references/`, tear down dev cloud resources (with per-resource confirmation), final commit/tag.
 
     This rule lives in AGENTS.md (not just in the original `/keystone` command) so that a session resuming the project months later still knows the completion trigger and what to do about it. Without this section the agent silently idles on issue-polling forever.
+18. **Pragmatism (MVP first, polish via issues).** When you hit a problem mid-implementation, classify it first, then act:
+    - **Blocking** — the current PR / wave / phase cannot be completed or its exit test cannot pass without solving this. Solve it now. If it's a hard problem you're stuck on, use the parallel-theory-subagent pattern from §9 (spawn 3–5 theory subagents in parallel exploring different hypotheses; if all come back empty, regroup with 3–5 fresh theories).
+    - **Non-blocking** — the task can ship with a workaround, hack, or temporary solution; the proper fix can land in a follow-up PR without invalidating current work. **Default to the hacky/MVP solution and file a GitHub issue for the proper fix.** Move on. The issue is the IOU — it ensures the proper fix happens before §17 finalization (which requires every issue to be closed).
+
+    **When to skip the hack and do the real solution now:**
+    - The real solution is genuinely easy — same cost as the hack, no reason to defer.
+    - **Moving from hacky → real later would require a big refactor.** This is the sunk-cost trap. If the hack will calcify the architecture and the proper fix means tearing out and redoing modules, do the proper fix now even if it's harder. Examples: choosing the wrong data model, the wrong async pattern, the wrong module boundary, anything that other code will be written against.
+    - Hacky path violates a §13 PLAN.md decision, a §14 ADR, or a §18 prior IOU's stated direction.
+
+    **Format for the IOU issue** (file via the GitHub MCP):
+    - Title: `tech-debt: <one-line of what's hacky now and what the proper fix is>`
+    - Body: what the current hack does (file:line), why it was chosen (link to the PR that introduced it), what the proper fix looks like, and how to verify the fix works.
+    - Label `tech-debt` if the repo uses labels.
+
+    **Hard rules:**
+    - Every hacky/MVP shortcut MUST have an open issue tracking the proper fix before the PR introducing it merges. No issue, no merge — the agent doesn't get to remember "I'll fix that later" on its own.
+    - Don't let IOUs pile up indefinitely. If §17 finalization-trigger is otherwise satisfied but tech-debt issues remain open, those issues block finalization. Drain them (or downgrade them to `wontfix` with the user's explicit approval) before declaring the project complete.
+    - Never close an IOU issue without actually solving it. Closing as "no longer relevant" requires a NOTES.md entry explaining why.
 
 ### Project-specific sections (in addition to the above)
 
